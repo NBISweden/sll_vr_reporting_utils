@@ -6,9 +6,9 @@ from pprint import pprint
 import sys
 
 class Redmine_utils:
-"""
-A class to interact with the Redmine API.
-"""
+    """
+    A class to interact with the Redmine API.
+    """
 
 
 
