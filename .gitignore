@@ -4,3 +4,4 @@
 *.xlsx
 *.tsv
 __pycache__/
+venv/
