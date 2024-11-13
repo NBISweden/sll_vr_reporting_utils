@@ -622,6 +622,11 @@ def generate_sll_report(issue_details, project_id, start_date, end_date, output_
 
         # get PI first and last name
         pi_name       = get_custom_field(issue, 'Principal Investigator')
+
+        # catch None PIs
+        if not pi_name:
+            pi_name = ''
+        
         pi_name_split = pi_name.split(' ')
         pi_last_name  = pi_name_split[-1]
         pi_first_name = " ".join(pi_name_split[:-1])
@@ -687,7 +692,7 @@ def generate_sll_report(issue_details, project_id, start_date, end_date, output_
         issue['report_type'] = issue['tracker']['name']
         if issue['project']['name'] == 'Bioimage Informatics':
             issue['report_type'] = 'BIIF'
-        elif re.match('Round \d{4}-\d+', issue['project']['name']):
+        elif re.match(r'Round \d{4}-\d+', issue['project']['name']):
             issue['report_type'] = 'LTS'
         if issue['tracker']['name'] == 'Partner Project':
             issue['report_type'] = 'PP'
