@@ -418,8 +418,16 @@ def generate_vr_report(args, issue_details, output_path):
         # get PI first and last name
         pi_name       = get_custom_field(issue, 'Principal Investigator')
         pi_name_split = pi_name.split(' ')
-        pi_last_name  = pi_name_split[-1]
-        pi_first_name = " ".join(pi_name_split[:-1])
+
+        # if the pi_name_split is 2, treat the last element as last name
+        if len(pi_name_split) == 2:
+            pi_first_name = pi_name_split[0]
+            pi_last_name  = pi_name_split[1]
+        # else, treat the last 2 elements as last names (double last names)
+        else:
+            pi_first_name = " ".join(pi_name_split[:-2])
+            pi_last_name  = " ".join(pi_name_split[-2:])
+
 
         # summarize the hours spent the requested period
         time_spent_this_period = sum([ hours for hours in issue['spent_per_activity'].values() ])
