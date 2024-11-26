@@ -423,6 +423,11 @@ def generate_vr_report(args, issue_details, output_path):
         if len(pi_name_split) == 2:
             pi_first_name = pi_name_split[0]
             pi_last_name  = pi_name_split[1]
+
+        elif len(pi_name_split) == 1: # edge case, but has to be handled
+            pi_first_name = ""
+            pi_last_name  = pi_name_split[0]
+
         # else, treat the last 2 elements as last names (double last names)
         else:
             pi_first_name = " ".join(pi_name_split[:-2])
