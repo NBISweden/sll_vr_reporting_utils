@@ -142,6 +142,7 @@ def fetch_data(redmine_url, api_key, group_id, date_interval, redmine, exclude_t
         response = requests.get(f"{redmine_url}/time_entries.json", params=params)
         response.raise_for_status()
         entries = response.json()["time_entries"]
+        time_without_issue = 0
         if not entries:
             break
         for entry in entries:
@@ -187,10 +188,17 @@ def fetch_data(redmine_url, api_key, group_id, date_interval, redmine, exclude_t
                     spent_time_data[support_type][user_id]['spent_time'][entry["activity"]["name"]][toplevel_proj] += entry["hours"]
                     spent_time_data[support_type][user_id]['spent_time'][entry["activity"]["name"]]["total"] += entry["hours"]
 
-                spent_time_data[support_type][user_id]['issues'].add(entry['issue']['id'])
+                try:
+                    spent_time_data[support_type][user_id]['issues'].add(entry['issue']['id'])
+                except:
+                    print(f"WARNING: Time entry without issue id by user '{entry['user']['name']}' in project '{entry['project']['name']}': https://projects.nbis.se/time_entries/{entry['id']}/edit")
+                    time_without_issue += entry['hours']
+                    #pdb.set_trace()
 
         offset += len(entries)
         print(f"Fetched {offset} time entries")
+        if time_without_issue > 0:
+            print(f"WARNING: {time_without_issue} hours of time entries without issue id")
 
     return spent_time_data
 
