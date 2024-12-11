@@ -62,7 +62,7 @@ def get_group_id(redmine_url, api_key, group_name):
             return group["id"]
     raise ValueError(f"No group found with name {group_name}")
 
-def fetch_data(redmine_url, api_key, group_id, date_interval, redmine, exclude_timelogbot=False):
+def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, exclude_timelogbot=False):
     """
     Fetch spent time data from Redmine for a specific group.
     Args:
@@ -239,12 +239,16 @@ def generate_report(spent_time_data, args):
 
     # make a sheet per support type
     sheets = {}
+    first_sheet = True
     for support_type in spent_time_data:
 
         # create expert list sheet, freeze the first column, and make this the active sheet when opening the file
         sheets[support_type] = workbook.add_worksheet(support_type)
         sheets[support_type].freeze_panes(1, 1)
-        sheets[support_type].activate()
+        # set the first support type sheet as the active sheet
+        if first_sheet:
+            sheets[support_type].activate()
+            first_sheet = False
     
     
         # write headers
@@ -488,9 +492,76 @@ def generate_report(spent_time_data, args):
     
 
 
+    ### Create the joint expert support summary list ###
+
+    # create the joint expert summary list, freeze the first column and row
+    summary_sheet  = workbook.add_worksheet("Support track summary")
+    summary_sheet.freeze_panes(1, 1)
+
+    user_summary = defaultdict(lambda: defaultdict(float))
+    # summarize the experts
+    for support_type in spent_time_data:
+        for user_id, user in spent_time_data[support_type].items():
+            # save user data
+            user_summary[user_id]['firstname'] = user['firstname']
+            user_summary[user_id]['lastname'] = user['lastname']
+            user_summary[user_id]['email'] = user['email']
+
+            # save spent time for this support type
+            try:
+                user_summary[user_id]['spent_time'][support_type] = user['spent_time']
+
+            # if it is the first time the support type is seen
+            except TypeError:
+                user_summary[user_id]['spent_time'] = {}
+                user_summary[user_id]['spent_time'][support_type] = user['spent_time']
+
+    # write headers
+    headers = [ 'Expert', 'Total hours' ] + [ f"Support {key} (h)" for key in sorted(list(spent_time_data.keys())) ]
+    headers += [ f"Support {key} (%)" for key in sorted(list(spent_time_data.keys())) ]
+
+    # adjust column widths to fit the headers
+    for i, header in enumerate(headers):
+        summary_sheet.set_column(i, i, max(len(header), 8)+1 )
+    # adjust the name column to fit the longest name
+    max_name_length = max([ len(f"{user['firstname']} {user['lastname']}") for user in user_summary.values() ])
+    summary_sheet.set_column(0, 0, max_name_length+1 )
 
 
+    for col_num, header in enumerate(headers):
+        summary_sheet.write(0, col_num, header, bold_text)
 
+    # write expert stats
+    for row_num, (user_id, user) in enumerate(sorted(user_summary.items(), key=lambda item: f"{item[1]['firstname']} {item[1]['lastname']}"), 1):
+
+        # init counter
+        col_num = 0
+
+        # easy one first, name
+        summary_sheet.write(row_num, col_num, f"{user['firstname']} {user['lastname']}")
+        col_num += 1
+
+        # write total hours
+        total_hours = 0
+        for support_type in spent_time_data:
+            for activity in user['spent_time'].get(support_type, {}):
+                total_hours += user['spent_time'][support_type][activity]['total']
+
+
+        summary_sheet.write(row_num, col_num, total_hours)
+        col_num += 1
+
+        # write support hours
+        for support_type in sorted(list(spent_time_data.keys())):
+            support_hours = user['spent_time'].get(support_type, {}).get('Support', {'total':0})['total']
+            summary_sheet.write(row_num, col_num, support_hours)
+
+            # write percentage
+            summary_sheet.write(row_num, col_num+len(spent_time_data.keys()), f"=IF(B{row_num+1}=0, 0, {xl_col_to_name(col_num)}{row_num+1}/B{row_num+1})", percent)
+            col_num += 1
+
+
+    #######################################
 
     workbook.close()
     print(f'Statistics saved as {output_path}')
@@ -508,11 +579,16 @@ if __name__ == "__main__":
         args.start_date = f"{args.year-1}-12-01"
         args.end_date   = f"{args.year  }-11-30"
 
-    # get the project structure from redmine
+    # login to redmine
     redmine_url, api_key = load_config(args.config)
     redmine = Redmine_utils({'api_key':api_key, 'url':redmine_url})
     
+    # get group id from group name
     group_id = get_group_id(redmine_url, api_key, args.group_name)
+
+    # get time entries withing the date range requested
     date_interval = {"<=": args.end_date, ">=": args.start_date}
-    spent_time_data = fetch_data(redmine_url, api_key, group_id, date_interval, redmine, args.exclude_timelogbot)
+    spent_time_data = get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, args.exclude_timelogbot)
+
+    # write the report
     generate_report(spent_time_data, args)
