@@ -259,22 +259,31 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, pro
                 # classify time for the percentage matrix
                 if projects[toplevel_proj]['name'] == "National Bioinformatics Support" and entry['activity']['name'] in ["Support", "Consultation"]:
                     percent_matrix_data[user_id]['Support SMS'] += entry['hours']
+
                 elif projects[toplevel_proj]['name'] == "Long-term Support" and entry['activity']['name'] in ["Support", "Consultation"]:
                     percent_matrix_data[user_id]['Support LTS'] += entry['hours']
-                elif entry['activity']['name'] == "NBIS Management":
-                    percent_matrix_data[user_id]['Centrala funkt'] += entry['hours']
-                elif entry['activity']['name'] in ["Support (DM)", "Consultation (DM)"]:
-                    percent_matrix_data[user_id]['Data mgmt'] += entry['hours']
-                elif entry['activity']['name'] in ["Development"]:
-                    percent_matrix_data[user_id]['Pipelines & Tools'] += entry['hours']
-                elif entry['activity']['name'] in ["Training", "Outreach"]:
-                    percent_matrix_data[user_id]['Training & Nat netw'] += entry['hours']
+
                 elif entry.get('issue', {}).get('id') == 3774:
                     percent_matrix_data[user_id]['ELIXIR'] += entry['hours']
+
                 elif entry['activity']['name'] in ["Professional Development", "Absence (Vacation/VAB/Other)", "Internal NBIS", "Administration"]:
                     pass
+
+                elif entry['activity']['name'] == "NBIS Management":
+                    percent_matrix_data[user_id]['Centrala funkt'] += entry['hours']
+
+                elif entry['activity']['name'] in ["Support (DM)", "Consultation (DM)"]:
+                    percent_matrix_data[user_id]['Data mgmt'] += entry['hours']
+
+                elif entry['activity']['name'] in ["Development"]:
+                    percent_matrix_data[user_id]['Pipelines & Tools'] += entry['hours']
+
+                elif entry['activity']['name'] in ["Training", "Outreach"]:
+                    percent_matrix_data[user_id]['Training & Nat netw'] += entry['hours']
+
                 elif projects[toplevel_proj]['name'] not in ["National Bioinformatics Support", "Long-term Support"]:
                     percent_matrix_data[user_id]['Övrigt'] += entry['hours']
+
                 else:
                     print(f"WARNING: Time entry by user '{entry['user']['name']}' in project '{entry['project']['name']}' not classified: https://projects.nbis.se/time_entries/{entry['id']}/edit")
 
