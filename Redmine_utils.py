@@ -22,12 +22,6 @@ class Redmine_utils:
         self.api_key  = config['api_key']
         self.projects = self.get_project_structure()
 
-        # define the classification lexicon
-        self.lexicon = {'bengts_report': {
-                            'default': 'SMS',
-                            'Long-term Support': 'Long-term',
-                        },
-            }
 
 
 
@@ -148,28 +142,6 @@ class Redmine_utils:
 
 
 
-    def classify_project(self, lexicon_name, proj_id):
-        """
-        Return the classification of a project according the requested lexicon.
-        """
-
-        # exit if the lexicon name is invalid
-        if lexicon_name not in self.lexicon:
-            sys.exit(f"ERROR: Lexicon not defined: {lexicon_name}")
-
-        # check if the proj_id is a name if it is not found
-        if proj_id not in self.projects:
-
-            possible_proj_id = [ proj['id'] for proj in self.projects if proj['name'] == proj_id ]
-            if len(possible_proj_id) == 1:
-                proj_id = possible_proj_id
-            else:
-                # how will deleted projects work here?
-                sys.exit(f"ERROR: proj_id \"{proj_id}\" neither a proj_id or proj_name.")
-
-
-        # return the classification if found, otherwise return the default classification for the lexicon
-        return self.lexicon[lexicon_name].get(self.projects[proj_id]['name'], self.lexicon[lexicon_name]['default'])
 
 
 
