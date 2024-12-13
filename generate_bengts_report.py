@@ -62,7 +62,42 @@ def get_group_id(redmine_url, api_key, group_name):
             return group["id"]
     raise ValueError(f"No group found with name {group_name}")
 
-def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, exclude_timelogbot=False):
+
+
+def classify_project(lexicon_name, proj_id):
+    """
+    Return the classification of a project according the requested lexicon.
+    """
+
+    
+    # define the classification lexicon
+    lexicon = {'bengts_report': {
+                        'default': 'SMS',
+                        'Long-term Support': 'Long-term',
+                    },
+        }
+
+    # exit if the lexicon name is invalid
+    if lexicon_name not in lexicon:
+        sys.exit(f"ERROR: Lexicon not defined: {lexicon_name}")
+
+    # check if the proj_id is a name if it is not found
+    if proj_id not in projects:
+
+        possible_proj_id = [ proj['id'] for proj in projects if proj['name'] == proj_id ]
+        if len(possible_proj_id) == 1:
+            proj_id = possible_proj_id
+        else:
+            # how will deleted projects work here?
+            sys.exit(f"ERROR: proj_id \"{proj_id}\" neither a proj_id or proj_name.")
+
+
+    # return the classification if found, otherwise return the default classification for the lexicon
+    return lexicon[lexicon_name].get(projects[proj_id]['name'], lexicon[lexicon_name]['default'])
+
+
+
+def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, projects, exclude_timelogbot=False):
     """
     Fetch spent time data from Redmine for a specific group.
     Args:
@@ -73,7 +108,9 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, exc
     Returns:
         A dictionary with the spent time data.
     """
-    spent_time_data = defaultdict(lambda: defaultdict(float))
+    spent_time_data     = defaultdict(lambda: defaultdict(float))
+    percent_matrix_data = {}
+
 
 
 
@@ -156,7 +193,7 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, exc
             toplevel_proj = redmine.get_toplevel_project(entry['project']['id'])
 
             # classify the project to make it end up in the right sheet
-            support_type = redmine.classify_project('bengts_report', toplevel_proj)
+            support_type = classify_project('bengts_report', toplevel_proj)
 
             # if the user is in the list of users we are interested in
             if user_id in users:
@@ -195,17 +232,67 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, exc
                     time_without_issue += entry['hours']
                     #pdb.set_trace()
 
+
+
+                #pdb.set_trace()
+                # make sure user is defined in the percent matrix
+                if user_id not in percent_matrix_data:
+                    # predefine percent matrix data keys
+                    percent_matrix_data[user_id] = {'Support SMS': 0,
+                                                    'Support LTS': 0,
+                                                    'Centrala funkt': 0,
+                                                    'Support sysbio': 0,
+                                                    'Data mgmt': 0,
+                                                    'Human data': 0,
+                                                    'sysdev': 0,
+                                                    'Pipelines & Tools': 0,
+                                                    'SCoRe': 0,
+                                                    'Training & Nat netw': 0,
+                                                    'ELIXIR': 0,
+                                                    'BIIF': 0,
+                                                    'AIDA DH': 0,
+                                                    'Övrigt': 0,
+                                                    'total': 0,
+                                                    'user': users[user_id],
+                                                    }
+
+                # classify time for the percentage matrix
+                if projects[toplevel_proj]['name'] == "National Bioinformatics Support" and entry['activity']['name'] in ["Support", "Consultation"]:
+                    percent_matrix_data[user_id]['Support SMS'] += entry['hours']
+                elif projects[toplevel_proj]['name'] == "Long-term Support" and entry['activity']['name'] in ["Support", "Consultation"]:
+                    percent_matrix_data[user_id]['Support LTS'] += entry['hours']
+                elif entry['activity']['name'] == "NBIS Management":
+                    percent_matrix_data[user_id]['Centrala funkt'] += entry['hours']
+                elif entry['activity']['name'] in ["Support (DM)", "Consultation (DM)"]:
+                    percent_matrix_data[user_id]['Data mgmt'] += entry['hours']
+                elif entry['activity']['name'] in ["Development"]:
+                    percent_matrix_data[user_id]['Pipelines & Tools'] += entry['hours']
+                elif entry['activity']['name'] in ["Training", "Outreach"]:
+                    percent_matrix_data[user_id]['Training & Nat netw'] += entry['hours']
+                elif entry.get('issue', {}).get('id') == 3774:
+                    percent_matrix_data[user_id]['ELIXIR'] += entry['hours']
+                elif entry['activity']['name'] in ["Professional Development", "Absence (Vacation/VAB/Other)", "Internal NBIS", "Administration"]:
+                    pass
+                elif projects[toplevel_proj]['name'] not in ["National Bioinformatics Support", "Long-term Support"]:
+                    percent_matrix_data[user_id]['Övrigt'] += entry['hours']
+                else:
+                    print(f"WARNING: Time entry by user '{entry['user']['name']}' in project '{entry['project']['name']}' not classified: https://projects.nbis.se/time_entries/{entry['id']}/edit")
+
+                # add the total time for the user
+                percent_matrix_data[user_id]['total'] += entry['hours']
+
+
         offset += len(entries)
         print(f"Fetched {offset} time entries")
         if time_without_issue > 0:
             print(f"WARNING: {time_without_issue} hours of time entries without issue id")
 
-    return spent_time_data
+    return spent_time_data, percent_matrix_data
 
 
 
 
-def generate_report(spent_time_data, args):
+def generate_report(spent_time_data, percent_matrix_data, args):
     """
     Summarize the issues as an Excel file and makes statistics as well.
 
@@ -492,75 +579,70 @@ def generate_report(spent_time_data, args):
     
 
 
-    ### Create the joint expert support summary list ###
+    ### Create the Bengt matrix ###
 
-    # create the joint expert summary list, freeze the first column and row
-    summary_sheet  = workbook.add_worksheet("Support track summary")
+    # create the sheet, freeze the first column and row
+    summary_sheet  = workbook.add_worksheet("Bengt's matrix")
     summary_sheet.freeze_panes(1, 1)
 
-    user_summary = defaultdict(lambda: defaultdict(float))
-    # summarize the experts
-    for support_type in spent_time_data:
-        for user_id, user in spent_time_data[support_type].items():
-            # save user data
-            user_summary[user_id]['firstname'] = user['firstname']
-            user_summary[user_id]['lastname'] = user['lastname']
-            user_summary[user_id]['email'] = user['email']
-
-            # save spent time for this support type
-            try:
-                user_summary[user_id]['spent_time'][support_type] = user['spent_time']
-
-            # if it is the first time the support type is seen
-            except TypeError:
-                user_summary[user_id]['spent_time'] = {}
-                user_summary[user_id]['spent_time'][support_type] = user['spent_time']
-
     # write headers
-    headers = [ 'Expert', 'Total hours' ] + [ f"Support {key} (h)" for key in sorted(list(spent_time_data.keys())) ]
-    headers += [ f"Support {key} (%)" for key in sorted(list(spent_time_data.keys())) ]
+    headers_raw = ['Centrala funkt',
+                   'Support SMS',
+                   'Support LTS',
+                   'Support sysbio',
+                   'Data mgmt',
+                   'Human data',
+                   'sysdev',
+                   'Pipelines & Tools',
+                   'SCoRe',
+                   'Training & Nat netw',
+                   'ELIXIR',
+                   'BIIF',
+                   'AIDA DH',
+                   'Övrigt',
+                   ]
+
+    headers = ['Expert'] + headers_raw + ['Summa'] + [f"{header} (%)" for header in headers_raw] + ['Summa (%)']
+
+    #pdb.set_trace()
+    for col_num, header in enumerate(headers):
+        summary_sheet.write(0, col_num, header, bold_text)
 
     # adjust column widths to fit the headers
     for i, header in enumerate(headers):
         summary_sheet.set_column(i, i, max(len(header), 8)+1 )
+
     # adjust the name column to fit the longest name
-    max_name_length = max([ len(f"{user['firstname']} {user['lastname']}") for user in user_summary.values() ])
+    max_name_length = max([ len(f"{user_entry['user']['firstname']} {user_entry['user']['lastname']}") for user_entry in percent_matrix_data.values() ])
     summary_sheet.set_column(0, 0, max_name_length+1 )
 
-
-    for col_num, header in enumerate(headers):
-        summary_sheet.write(0, col_num, header, bold_text)
-
     # write expert stats
-    for row_num, (user_id, user) in enumerate(sorted(user_summary.items(), key=lambda item: f"{item[1]['firstname']} {item[1]['lastname']}"), 1):
+    for row_num, (user_id, user_entry) in enumerate(sorted(percent_matrix_data.items(), key=lambda item: f"{item[1]['user']['firstname']} {item[1]['user']['lastname']}"), 1):
 
         # init counter
         col_num = 0
 
         # easy one first, name
-        summary_sheet.write(row_num, col_num, f"{user['firstname']} {user['lastname']}")
+        #pdb.set_trace()
+        summary_sheet.write(row_num, col_num, f"{user_entry['user']['firstname']} {user_entry['user']['lastname']}")
         col_num += 1
+
+        # write hours
+        for i, header in enumerate(headers_raw):
+            summary_sheet.write(row_num, col_num+i, percent_matrix_data[user_id][header])
+        col_num += len(headers_raw)
 
         # write total hours
-        total_hours = 0
-        for support_type in spent_time_data:
-            for activity in user['spent_time'].get(support_type, {}):
-                total_hours += user['spent_time'][support_type][activity]['total']
-
-
-        summary_sheet.write(row_num, col_num, total_hours)
+        summary_sheet.write(row_num, col_num, f"=SUM(B{row_num+1}:O{row_num+1})")
         col_num += 1
 
-        # write support hours
-        for support_type in sorted(list(spent_time_data.keys())):
-            support_hours = user['spent_time'].get(support_type, {}).get('Support', {'total':0})['total']
-            summary_sheet.write(row_num, col_num, support_hours)
+        # write percentages
+        for i, header in enumerate(headers_raw):
+            summary_sheet.write(row_num, col_num+i, f"=IF({xl_col_to_name(col_num+i-len(headers_raw)-1)}{row_num+1}=0, 0, {xl_col_to_name(col_num+i-len(headers_raw)-1)}{row_num+1}/P{row_num+1})", percent)
+        col_num += len(headers_raw)
 
-            # write percentage
-            summary_sheet.write(row_num, col_num+len(spent_time_data.keys()), f"=IF(B{row_num+1}=0, 0, {xl_col_to_name(col_num)}{row_num+1}/B{row_num+1})", percent)
-            col_num += 1
-
-
+        # write total percentage
+        summary_sheet.write(row_num, col_num, f"=SUM(Q{row_num+1}:AD{row_num+1})", percent)
     #######################################
 
     workbook.close()
@@ -582,13 +664,16 @@ if __name__ == "__main__":
     # login to redmine
     redmine_url, api_key = load_config(args.config)
     redmine = Redmine_utils({'api_key':api_key, 'url':redmine_url})
+
+    # get all projects
+    projects = redmine.get_project_structure()
     
     # get group id from group name
     group_id = get_group_id(redmine_url, api_key, args.group_name)
 
     # get time entries withing the date range requested
     date_interval = {"<=": args.end_date, ">=": args.start_date}
-    spent_time_data = get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, args.exclude_timelogbot)
+    spent_time_data, percent_matrix_data = get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, projects, args.exclude_timelogbot)
 
     # write the report
-    generate_report(spent_time_data, args)
+    generate_report(spent_time_data, percent_matrix_data, args)
