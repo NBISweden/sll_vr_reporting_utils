@@ -174,12 +174,12 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, pro
     # Fetch all time entries in the date interval
     params = {"key": api_key, "spent_on": f"><{date_interval['>=']}|{date_interval['<=']}", "limit": 100}
     offset = 0
+    time_without_issue = 0
     while True:
         params["offset"] = offset
         response = requests.get(f"{redmine_url}/time_entries.json", params=params)
         response.raise_for_status()
         entries = response.json()["time_entries"]
-        time_without_issue = 0
         if not entries:
             break
         for entry in entries:
@@ -257,44 +257,58 @@ def get_time_entries(redmine_url, api_key, group_id, date_interval, redmine, pro
                                                     }
 
                 # classify time for the percentage matrix
-                if projects[toplevel_proj]['name'] == "National Bioinformatics Support" and entry['activity']['name'] in ["Support", "Consultation"]:
+                if (projects[toplevel_proj]['name'] == "National Bioinformatics Support" and entry['activity']['name'] in ["Support", "Consultation"]) or ():
                     percent_matrix_data[user_id]['Support SMS'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif projects[toplevel_proj]['name'] == "Long-term Support" and entry['activity']['name'] in ["Support", "Consultation"]:
                     percent_matrix_data[user_id]['Support LTS'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif entry.get('issue', {}).get('id') == 3774:
                     percent_matrix_data[user_id]['ELIXIR'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
-                elif entry['activity']['name'] in ["Professional Development", "Absence (Vacation/VAB/Other)", "Internal NBIS", "Administration"]:
+                elif entry['activity']['name'] in ["Professional Development", "Absence (Vacation/VAB/Other)", "Internal NBIS", "Administration", "Internal consultation"]:
                     pass
+
+                elif projects[toplevel_proj]['name'] not in ["National Bioinformatics Support", "Long-term Support"] and entry['activity']['name'] in ["Consultation"]:
+                    percent_matrix_data[user_id]['Support SMS'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
+
+                    percent_matrix_data[user_id]['total'] += entry['hours']
+                elif entry.get('issue', {}).get('id') in [3499, 7000] and entry['activity']['name'] in ["Consultation"]:
+                    percent_matrix_data[user_id]['Support SMS'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif entry['activity']['name'] == "NBIS Management":
                     percent_matrix_data[user_id]['Centrala funkt'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif entry['activity']['name'] in ["Support (DM)", "Consultation (DM)"]:
                     percent_matrix_data[user_id]['Data mgmt'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif entry['activity']['name'] in ["Development"]:
                     percent_matrix_data[user_id]['Pipelines & Tools'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 elif entry['activity']['name'] in ["Training", "Outreach"]:
                     percent_matrix_data[user_id]['Training & Nat netw'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
-                elif projects[toplevel_proj]['name'] not in ["National Bioinformatics Support", "Long-term Support"]:
+                elif projects[toplevel_proj]['name'] not in ["National Bioinformatics Support", "Long-term Support"] and entry['activity']['name'] in ["Support"]:
                     percent_matrix_data[user_id]['Övrigt'] += entry['hours']
+                    percent_matrix_data[user_id]['total'] += entry['hours']
 
                 else:
                     print(f"WARNING: Time entry by user '{entry['user']['name']}' in project '{entry['project']['name']}' not classified: https://projects.nbis.se/time_entries/{entry['id']}/edit")
 
-                # add the total time for the user
-                percent_matrix_data[user_id]['total'] += entry['hours']
-
-
         offset += len(entries)
         print(f"Fetched {offset} time entries")
-        if time_without_issue > 0:
-            print(f"WARNING: {time_without_issue} hours of time entries without issue id")
+
+    if time_without_issue > 0:
+        print(f"WARNING: {time_without_issue} hours of time entries without issue id")
 
     return spent_time_data, percent_matrix_data
 
