@@ -1159,5 +1159,9 @@ python3 generate_report.py -c config.yaml --vr  --long-term --year 2023 -o sll_2
     if args.sll:
         generate_sll_report(issue_details, args.project_id, args.start_date, args.end_date,  args.output)
 
+    # if vr
+    if args.vr:
+        generate_vr_report(args, issue_details, args.output)
+
 if __name__ == '__main__':
     main()
